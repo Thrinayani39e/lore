@@ -13,6 +13,7 @@ Lore does. It continuously ingests a repo's commits, pull requests, and issues, 
 5. **Writes onboarding briefs.** `/lore-onboard` synthesizes a "start here" brief for a new contributor from the real history: architecture decisions, known landmines, who to ask about what.
 6. **Runs a standing risk digest.** `/lore-digest` combines recent ambient flags with the most heavily-discussed history items into a few bullets a team lead actually wants to read.
 7. **Turns tribal knowledge into a real doc.** `/lore-document owner/repo --post` synthesizes a structured `LORE.md` (Key Decisions / Known Landmines / Architecture Rationale) from history and opens an actual PR adding it to the repo.
+8. **Explains itself.** `/lore-help [question]` — with no args, lists everything above; with a question, answers about Lore's own capabilities (not the ingested repo's code).
 
 This isn't a wrapper around asking an LLM to read a repo once. It's a small always-on service with its own ingestion pipeline, vector index, and pub/sub flag stream — the kind of persistent infrastructure a single agent invocation can't replicate.
 
@@ -111,7 +112,7 @@ python -m lore.integrations.slack_bot
 ## Slack setup
 
 1. Create a Slack app at api.slack.com/apps, enable Socket Mode, and add an app-level token (`SLACK_APP_TOKEN`).
-2. Add all seven slash commands — `/lore`, `/lore-ingest`, `/lore-review`, `/lore-bus-factor`, `/lore-onboard`, `/lore-digest`, `/lore-document` — and bot scopes `commands`, `chat:write`.
+2. Add all eight slash commands — `/lore`, `/lore-ingest`, `/lore-review`, `/lore-bus-factor`, `/lore-onboard`, `/lore-digest`, `/lore-document`, `/lore-help` — and bot scopes `commands`, `chat:write`.
 3. Install the app to your workspace, copy the bot token into `SLACK_BOT_TOKEN`.
 4. Run `python -m lore.integrations.slack_bot`.
 

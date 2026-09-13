@@ -13,6 +13,7 @@ import threading
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
+from lore.bedrock_client import generate_text
 from lore.config import settings
 from lore.ingestion.indexer import ingest_repo
 from lore.ingestion.github_ingest import GitHubIngestor
@@ -29,6 +30,35 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("lore.slack")
 
 app = App(token=settings.slack_bot_token, signing_secret=settings.slack_signing_secret)
+
+CAPABILITIES = """Lore is an ambient teammate that ingests a GitHub repo's commits, pull requests, \
+and issues into a searchable index, then does two kinds of things: it watches your local checkout \
+and proactively flags when a live edit collides with something in the repo's own history (no one \
+has to ask), and it exposes that history through these Slack commands:
+
+- `/lore <question>` — ask anything about the repo; answers grounded in real history, with citations.
+- `/lore-ingest owner/repo` — index any GitHub repo (public or private with a token).
+- `/lore-review owner/repo#123 [--post]` — reviews a real PR's diff against the repo's own history \
+(not style/lint — specifically checks for collisions with past decisions or reverted changes). \
+`--post` leaves a real comment on the PR.
+- `/lore-bus-factor` — finds files touched by exactly one author across history (knowledge silos — \
+what breaks if that person leaves).
+- `/lore-onboard` — generates a "start here" brief for a new contributor from the real history: \
+architecture decisions, known landmines, who to ask about what.
+- `/lore-digest [owner/repo]` — a standing risk report combining recent ambient flags with the most \
+heavily-discussed history items, for team leads.
+- `/lore-document owner/repo [--post]` — synthesizes a structured `LORE.md` (decisions, landmines, \
+architecture rationale) from history; `--post` opens a real PR adding it to the repo.
+
+Lore is not a one-shot "ask an AI to read the code" tool — it's a small always-on service with its \
+own ingestion pipeline and vector index, so it accumulates and reuses history over time rather than \
+re-reading everything from scratch on every question."""
+
+HELP_SYSTEM = f"""You are Lore, answering a question about your own capabilities as a product — not \
+about any ingested repo's code. Use ONLY the following accurate description of what you can do. Be \
+concise and concrete; if asked about something you don't do, say so plainly rather than guessing.
+
+{CAPABILITIES}"""
 
 
 @app.command("/lore")
@@ -188,6 +218,19 @@ def handle_document(ack, respond, command):
         respond(f":white_check_mark: Opened <{pr['html_url']}|{pr['title']}> adding `LORE.md`.")
 
     threading.Thread(target=run, daemon=True).start()
+
+
+@app.command("/lore-help")
+def handle_help(ack, respond, command):
+    ack()
+    question = command.get("text", "").strip()
+    if not question:
+        respond(f":brain: *What Lore can do*\n\n{CAPABILITIES}")
+        return
+
+    respond(":thinking_face: ...")
+    answer = generate_text(HELP_SYSTEM, question, max_tokens=500)
+    respond(answer)
 
 
 def main():
