@@ -118,6 +118,42 @@ class GitHubIngestor:
         resp.raise_for_status()
         return [{"filename": f["filename"], "patch": f.get("patch", "")} for f in resp.json()]
 
+    def create_branch(self, new_branch: str, base_branch: str = "main") -> None:
+        base_ref = self.client.get(f"/repos/{self.repo}/git/ref/heads/{base_branch}")
+        base_ref.raise_for_status()
+        base_sha = base_ref.json()["object"]["sha"]
+        resp = self.client.post(
+            f"/repos/{self.repo}/git/refs",
+            json={"ref": f"refs/heads/{new_branch}", "sha": base_sha},
+        )
+        resp.raise_for_status()
+
+    def create_or_update_file(self, path: str, content: str, branch: str, message: str) -> None:
+        import base64
+
+        existing_sha = None
+        existing = self.client.get(f"/repos/{self.repo}/contents/{path}", params={"ref": branch})
+        if existing.status_code == 200:
+            existing_sha = existing.json().get("sha")
+
+        payload = {
+            "message": message,
+            "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+            "branch": branch,
+        }
+        if existing_sha:
+            payload["sha"] = existing_sha
+        resp = self.client.put(f"/repos/{self.repo}/contents/{path}", json=payload)
+        resp.raise_for_status()
+
+    def create_pull_request(self, title: str, body: str, head_branch: str, base_branch: str = "main") -> dict:
+        resp = self.client.post(
+            f"/repos/{self.repo}/pulls",
+            json={"title": title, "body": body, "head": head_branch, "base": base_branch},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def post_pull_request_comment(self, pr_number: int, body: str) -> dict:
         """Posts a plain (non-inline) comment on a PR via the issues comments
         endpoint — PRs are issues under the hood in the GitHub API."""

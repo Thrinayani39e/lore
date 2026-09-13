@@ -65,3 +65,15 @@ class VectorStore:
 
     def count(self) -> int:
         return self._collection.count()
+
+    def get_all(self, limit: int = 10000) -> list[StoredMatch]:
+        """Full scan of everything indexed — used for corpus-level analysis
+        (bus factor, digests) rather than a single semantic query."""
+        result = self._collection.get(limit=limit, include=["documents", "metadatas"])
+        ids = result.get("ids", [])
+        docs = result.get("documents", [])
+        metas = result.get("metadatas", [])
+        return [
+            StoredMatch(chunk_id=ids[i], text=docs[i], metadata=metas[i] or {}, distance=0.0)
+            for i in range(len(ids))
+        ]
