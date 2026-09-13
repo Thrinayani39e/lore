@@ -70,6 +70,57 @@ def answer_question(question: str, top_k: int = 6) -> Answer:
     return Answer(text=text, citations=citations)
 
 
+def _format_review_comment(meta: dict, findings: list[dict]) -> str:
+    lines = ["**Lore review** — checked this PR against the repo's own commit/PR/issue history.\n"]
+    for f in findings:
+        citation_md = ", ".join(
+            f"[{c['title']}]({c['url']})" for c in f.get("citations", []) if c.get("url")
+        )
+        lines.append(f"**`{f['file']}`** (confidence {f['confidence']:.2f})\n{f['message']}\n\n{citation_md}\n")
+    lines.append("_Posted automatically by [Lore](https://github.com/Thrinayani39e/lore) — no human reviewed this comment._")
+    return "\n".join(lines)
+
+
+def review_pull_request(
+    repo: str, pr_number: int, token: str | None, max_files: int = 8, post_comment: bool = False
+) -> dict:
+    """Reviews an open (or any) PR against the repo's own indexed history —
+    not a generic code review, but specifically: does this PR collide with a
+    past decision, a reverted change, or a known landmine? Reuses the same
+    judge_relevance the ambient watcher uses, just against real diff patches
+    instead of live file content.
+
+    `repo` is where the PR itself lives; the history it's checked against is
+    whatever's already indexed (search() isn't repo-scoped), so this can be
+    pointed at a demo/fork repo while still matching real project history.
+    """
+    from lore.ingestion.github_ingest import GitHubIngestor
+
+    ingestor = GitHubIngestor(repo=repo, token=token)
+    try:
+        meta = ingestor.get_pull_request_meta(pr_number)
+        files = ingestor.get_pull_request_files(pr_number)
+
+        from dataclasses import asdict
+
+        findings = []
+        for f in files[:max_files]:
+            patch = f.get("patch")
+            if not patch:
+                continue
+            result = judge_relevance(f["filename"], patch)
+            if result.get("relevant") and result.get("confidence", 0) >= 0.5:
+                result["citations"] = [asdict(c) for c in result.get("citations", [])]
+                findings.append({"file": f["filename"], **result})
+
+        if post_comment and findings:
+            ingestor.post_pull_request_comment(pr_number, _format_review_comment(meta, findings))
+    finally:
+        ingestor.close()
+
+    return {"repo": repo, "pr_number": pr_number, "meta": meta, "findings": findings}
+
+
 def judge_relevance(file_path: str, diff_or_content: str, top_k: int = 5) -> dict:
     """Returns {"relevant": bool, "confidence": float, "message": str, "citations": [Citation]}."""
     query = f"{file_path}\n{diff_or_content[:3000]}"

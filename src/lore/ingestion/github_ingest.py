@@ -111,6 +111,26 @@ class GitHubIngestor:
             if max_items and count >= max_items:
                 return
 
+    def get_pull_request_files(self, pr_number: int) -> list[dict]:
+        """Returns [{filename, patch}] for a PR — patch is the unified diff text
+        (absent for binary/very large files, which GitHub omits it for)."""
+        resp = self.client.get(f"/repos/{self.repo}/pulls/{pr_number}/files")
+        resp.raise_for_status()
+        return [{"filename": f["filename"], "patch": f.get("patch", "")} for f in resp.json()]
+
+    def post_pull_request_comment(self, pr_number: int, body: str) -> dict:
+        """Posts a plain (non-inline) comment on a PR via the issues comments
+        endpoint — PRs are issues under the hood in the GitHub API."""
+        resp = self.client.post(f"/repos/{self.repo}/issues/{pr_number}/comments", json={"body": body})
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_pull_request_meta(self, pr_number: int) -> dict:
+        resp = self.client.get(f"/repos/{self.repo}/pulls/{pr_number}")
+        resp.raise_for_status()
+        pr = resp.json()
+        return {"title": pr.get("title", ""), "url": pr.get("html_url", ""), "author": (pr.get("user") or {}).get("login", "unknown")}
+
     def iter_pull_requests(self, max_items: int | None = None) -> Iterator[HistoryItem]:
         count = 0
         for pr in self._paginate(f"/repos/{self.repo}/pulls", params={"state": "all"}):

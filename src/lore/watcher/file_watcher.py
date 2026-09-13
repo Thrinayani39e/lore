@@ -32,9 +32,27 @@ class _Handler(FileSystemEventHandler):
         self._last_seen: dict[str, float] = {}
 
     def on_modified(self, event):
+        self._handle(event)
+
+    def on_created(self, event):
+        self._handle(event)
+
+    def on_moved(self, event):
+        # Editors that save via write-to-temp + rename emit a "moved" event
+        # for the final path rather than "modified" — treat the destination
+        # like a fresh edit.
+        dest = getattr(event, "dest_path", None)
+        if dest:
+            self._handle_path(Path(dest), event.is_directory)
+
+    def _handle(self, event):
         if event.is_directory:
             return
-        path = Path(event.src_path)
+        self._handle_path(Path(event.src_path), False)
+
+    def _handle_path(self, path: Path, is_directory: bool):
+        if is_directory:
+            return
         if any(part in IGNORED_DIRS for part in path.parts):
             return
         if path.suffix not in WATCHED_SUFFIXES:

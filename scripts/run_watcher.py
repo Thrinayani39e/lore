@@ -5,9 +5,12 @@ Reads WATCH_REPO_PATH from .env if the path arg is omitted.
 """
 from __future__ import annotations
 
+import logging
 import sys
 
 sys.path.insert(0, "src")
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
 from lore.config import settings
 from lore.watcher.file_watcher import watch

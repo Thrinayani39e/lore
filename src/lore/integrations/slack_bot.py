@@ -15,7 +15,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from lore.config import settings
 from lore.ingestion.indexer import ingest_repo
-from lore.retrieval.retriever import answer_question
+from lore.retrieval.retriever import answer_question, review_pull_request
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("lore.slack")
@@ -53,6 +53,44 @@ def handle_ingest(ack, respond, command):
     def run():
         count = ingest_repo(repo, settings.github_token)
         respond(f":white_check_mark: Indexed {count} chunks from `{repo}`. Ask away with `/lore`.")
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+@app.command("/lore-review")
+def handle_review(ack, respond, command):
+    ack()
+    text = command.get("text", "").strip()
+    post_comment = "--post" in text
+    text = text.replace("--post", "").strip()
+
+    repo, _, pr_ref = text.partition("#")
+    if not pr_ref:
+        repo, _, pr_ref = text.rpartition(" ")
+    repo = repo.strip()
+    pr_ref = pr_ref.strip()
+    if not repo or "/" not in repo or not pr_ref.isdigit():
+        respond("Usage: `/lore-review owner/repo#123` (add `--post` to also post a comment on the PR)")
+        return
+
+    pr_number = int(pr_ref)
+    respond(f":mag: Reviewing `{repo}#{pr_number}` against its own history...")
+
+    def run():
+        result = review_pull_request(repo, pr_number, settings.github_token, post_comment=post_comment)
+        meta = result["meta"]
+        findings = result["findings"]
+        if not findings:
+            respond(f":white_check_mark: No history collisions found in <{meta['url']}|{meta['title']}>.")
+            return
+
+        lines = [f":warning: *Lore review* of <{meta['url']}|{meta['title']}>"]
+        for f in findings:
+            citation_lines = ", ".join(f"<{c['url']}|{c['title']}>" for c in f.get("citations", []) if c.get("url"))
+            lines.append(f"\n*`{f['file']}`* (confidence {f['confidence']:.2f})\n{f['message']}\n{citation_lines}")
+        if post_comment:
+            lines.append(f"\n:speech_balloon: Posted as a comment on <{meta['url']}|the PR>.")
+        respond("\n".join(lines))
 
     threading.Thread(target=run, daemon=True).start()
 
